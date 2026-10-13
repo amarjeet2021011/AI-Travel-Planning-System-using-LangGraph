@@ -35,28 +35,27 @@ Open the terminal inside the project folder and run:
 
 		python -m venv langgraph_env3
 
-
 Now activate the environment:
 
 #### Windows
 
 		langgraph_env3\Scripts\activate
 
+#### macOS / Linux
 
+		source langgraph_env3/bin/activate
 
 ---
 
 # Step 2: Install Dependencies
 
-Run the following command:
-
-		pip install langgraph langchain langchain-openai langchain-groq langchain-community langchain-tavily psycopg[binary] psycopg_pool python-dotenv tavily-python requests streamlit
-
-		pip install -U "psycopg[binary,pool]"  langgraph-checkpoint-postgres
+		pip install -r requirements.txt
 
 ---
 
-# Step 3: Install PostgreSQL
+# Step 3: Install PostgreSQL (optional)
+
+PostgreSQL is optional. If `DATABASE_URL` is not set, the app uses in-memory storage, so conversation memory is lost when the app restarts.
 
 Download and install PostgreSQL: https://www.postgresql.org/download/
 
@@ -150,4 +149,20 @@ Plan a complete 7 days Japan trip including flights, hotels and sightseeing unde
 3. Itinerary Agent creates travel plan
 4. Final Agent combines everything together
 5. PostgreSQL stores conversation memory
+
+---
+
+# Deploy to Streamlit Community Cloud
+
+1. Push this repo to GitHub. `.env` is gitignored, so never commit your keys.
+2. Go to https://share.streamlit.io, click **Create app**, and pick this repo, branch `main`, and main file `frontend.py`.
+3. Under **Advanced settings → Secrets**, paste your keys (see `.streamlit/secrets.toml.example`):
+
+		GROQ_API_KEY = "..."
+		TAVILY_API_KEY = "..."
+		AVIATIONSTACK_API_KEY = "..."
+		# Optional, for persistent memory (e.g. a free Neon / Supabase Postgres):
+		# DATABASE_URL = "postgresql://user:pass@host:5432/db?sslmode=require"
+
+4. Click **Deploy**.
 

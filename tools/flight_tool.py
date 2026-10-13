@@ -15,10 +15,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-API_KEY = os.getenv("AVIATIONSTACK_API_KEY")
-
-
 def search_flights(query):
+    API_KEY = os.getenv("AVIATIONSTACK_API_KEY")
+    if not API_KEY:
+        raise RuntimeError("AVIATIONSTACK_API_KEY is not set. Add it to .env or Streamlit secrets.")
 
     url = "http://api.aviationstack.com/v1/flights"
 
@@ -27,7 +27,7 @@ def search_flights(query):
         "limit": 5
     }
 
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=30)
 
     data = response.json()
 

@@ -2,7 +2,7 @@ import os
 import streamlit as st
 from datetime import datetime
 from langchain_core.messages import HumanMessage
-from main import app
+from main import app, MEMORY_BACKEND
 
 st.set_page_config(
     page_title="AI Travel Booking System",
@@ -312,6 +312,8 @@ with st.sidebar:
     for tech in ["🔗 LangGraph", "🧠 Groq · LLaMA 3.3 70B", "🐘 PostgreSQL", "🔍 Tavily Search", "✈️ AviationStack"]:
         st.markdown(f"<div class='sidebar-chip'>{tech}</div>", unsafe_allow_html=True)
 
+    st.markdown(f"<div class='sidebar-chip'>💾 Memory: {MEMORY_BACKEND}</div>", unsafe_allow_html=True)
+
     st.markdown("<div class='sidebar-title'>Agent Pipeline</div>", unsafe_allow_html=True)
     for step in ["① Flight Agent", "② Hotel Agent", "③ Itinerary Agent", "④ Final Agent"]:
         st.markdown(f"<div class='sidebar-chip'>{step}</div>", unsafe_allow_html=True)
@@ -357,21 +359,32 @@ st.markdown("<div class='input-label'>🗺️ Describe your trip</div>", unsafe_
 
 QUICK = ["7-day Japan under ₹2L", "Paris trip for 5 days", "Dubai weekend trip", "Bali backpacking 10 days"]
 qcols = st.columns(len(QUICK))
-quick_fill = ""
+
+def _quick_fill(text):
+    st.session_state["trip_query"] = text
+
+
 for qc, label in zip(qcols, QUICK):
     with qc:
-        if st.button(label, key=f"q_{label}"):
-            quick_fill = label
+        st.button(label, key=f"q_{label}", on_click=_quick_fill, args=(label,))
 
 user_query = st.text_area(
-    "",
-    value=quick_fill,
+    "Trip description",
+    key="trip_query",
     placeholder="e.g. Plan a complete 7-day Japan trip including flights, hotels and sightseeing under ₹2 lakhs",
     height=100,
     label_visibility="collapsed",
 )
 
 generate = st.button("🚀  Generate My Travel Plan", use_container_width=True)
+
+REQUIRED_KEYS = ["GROQ_API_KEY", "TAVILY_API_KEY", "AVIATIONSTACK_API_KEY"]
+missing_keys = [k for k in REQUIRED_KEYS if not os.getenv(k)]
+if missing_keys:
+    st.warning(
+        "Missing API keys: " + ", ".join(f"`{k}`" for k in missing_keys)
+        + ". Add them to `.env` locally or to the app's Secrets on Streamlit Cloud."
+    )
 
 # ── Agent pipeline ────────────────────────────────────────────────────────────
 AGENT_META = {
@@ -393,44 +406,48 @@ if generate:
         st.markdown("<div class='sec-head'><span>🤖 Agent Pipeline — Live</span></div>",
                     unsafe_allow_html=True)
 
-        for chunk in app.stream(
-            {
-                "messages": [HumanMessage(content=user_query)],
-                "user_query": user_query,
-                "flight_results": "",
-                "hotel_results": "",
-                "itinerary": "",
-                "llm_calls": 0,
-            },
-            config=config,
-            stream_mode="updates",
-        ):
-            for node_name, state_update in chunk.items():
-                icon, label = AGENT_META.get(node_name, ("🔧", node_name))
+        try:
+            for chunk in app.stream(
+                {
+                    "messages": [HumanMessage(content=user_query)],
+                    "user_query": user_query,
+                    "flight_results": "",
+                    "hotel_results": "",
+                    "itinerary": "",
+                    "llm_calls": 0,
+                },
+                config=config,
+                stream_mode="updates",
+            ):
+                for node_name, state_update in chunk.items():
+                    icon, label = AGENT_META.get(node_name, ("🔧", node_name))
 
-                with st.status(f"{icon}  {label}", state="complete", expanded=True):
-                    if node_name == "flight_agent":
-                        text = state_update.get("flight_results", "")
-                        collected["flight_results"] = text
-                        st.markdown(text or "_No flight data returned._")
+                    with st.status(f"{icon}  {label}", state="complete", expanded=True):
+                        if node_name == "flight_agent":
+                            text = state_update.get("flight_results", "")
+                            collected["flight_results"] = text
+                            st.markdown(text or "_No flight data returned._")
 
-                    elif node_name == "hotel_agent":
-                        text = state_update.get("hotel_results", "")
-                        collected["hotel_results"] = text
-                        st.markdown(text or "_No hotel data returned._")
+                        elif node_name == "hotel_agent":
+                            text = state_update.get("hotel_results", "")
+                            collected["hotel_results"] = text
+                            st.markdown(text or "_No hotel data returned._")
 
-                    elif node_name == "itinerary_agent":
-                        text = state_update.get("itinerary", "")
-                        collected["itinerary"] = text
-                        st.markdown(text or "_No itinerary generated._")
+                        elif node_name == "itinerary_agent":
+                            text = state_update.get("itinerary", "")
+                            collected["itinerary"] = text
+                            st.markdown(text or "_No itinerary generated._")
 
-                    elif node_name == "final_agent":
-                        msgs = state_update.get("messages", [])
-                        text = msgs[-1].content if msgs else ""
-                        collected["final_response"] = text
-                        st.markdown(text or "_No final response._")
+                        elif node_name == "final_agent":
+                            msgs = state_update.get("messages", [])
+                            text = msgs[-1].content if msgs else ""
+                            collected["final_response"] = text
+                            st.markdown(text or "_No final response._")
 
-                    collected["llm_calls"] = state_update.get("llm_calls", collected["llm_calls"])
+                        collected["llm_calls"] = state_update.get("llm_calls", collected["llm_calls"])
+        except Exception as e:
+            st.error(f"Agent pipeline failed: {e}")
+            st.stop()
 
         # Metrics
         st.markdown(f"""

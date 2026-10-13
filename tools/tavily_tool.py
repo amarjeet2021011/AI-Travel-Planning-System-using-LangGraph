@@ -9,9 +9,17 @@ load_dotenv()
 # Signup and login, On dashboard- > under api keys you will see the default key.
 # Use that or click on + to create new one. Then save it in .env file
 
-client = TavilyClient(
-    api_key=os.getenv("TAVILY_API_KEY")
-)
+_client = None
+
+
+def get_client():
+    global _client
+    if _client is None:
+        api_key = os.getenv("TAVILY_API_KEY")
+        if not api_key:
+            raise RuntimeError("TAVILY_API_KEY is not set. Add it to .env or Streamlit secrets.")
+        _client = TavilyClient(api_key=api_key)
+    return _client
 
 # test it
 #################################
@@ -26,7 +34,7 @@ client = TavilyClient(
 
 
 def tavily_search(query):
-    response = client.search(
+    response = get_client().search(
         query=query,
         max_results=5
     )

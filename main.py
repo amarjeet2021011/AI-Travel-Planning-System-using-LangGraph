@@ -12,9 +12,8 @@ import os
 from typing import TypedDict, Annotated
 import operator
 
-import psycopg
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.memory import InMemorySaver
 from langchain_core.messages import (
     AnyMessage,
     HumanMessage,
@@ -31,10 +30,17 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# LLM
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile"
-)
+# LLM (created lazily so the app can start without GROQ_API_KEY)
+_llm = None
+
+
+def get_llm():
+    global _llm
+    if _llm is None:
+        if not os.getenv("GROQ_API_KEY"):
+            raise RuntimeError("GROQ_API_KEY is not set. Add it to .env or Streamlit secrets.")
+        _llm = ChatGroq(model="llama-3.3-70b-versatile")
+    return _llm
 
 # State
 class TravelState(TypedDict):
@@ -85,7 +91,7 @@ def itinerary_agent(state: TravelState):
     {state['hotel_results']}
     """
 
-    response = llm.invoke([
+    response = get_llm().invoke([
         SystemMessage(
             content="You are an expert travel planner"
         ),
@@ -114,7 +120,7 @@ def final_agent(state: TravelState):
     {state['itinerary']}
     """
 
-    response = llm.invoke([
+    response = get_llm().invoke([
         HumanMessage(content=final_prompt)
     ])
 
@@ -138,10 +144,20 @@ graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END)
 
 
-# Persistent connection so both CLI and Streamlit can share the compiled app
-_conn = psycopg.connect(DATABASE_URL)
-checkpointer = PostgresSaver(_conn)
-checkpointer.setup()
+# Use PostgreSQL memory when DATABASE_URL is set, otherwise fall back to in-memory
+def create_checkpointer():
+    if DATABASE_URL:
+        import psycopg
+        from langgraph.checkpoint.postgres import PostgresSaver
+
+        conn = psycopg.connect(DATABASE_URL, autocommit=True)
+        saver = PostgresSaver(conn)
+        saver.setup()
+        return saver, "PostgreSQL"
+    return InMemorySaver(), "In-memory"
+
+
+checkpointer, MEMORY_BACKEND = create_checkpointer()
 
 app = graph.compile(checkpointer=checkpointer)
 
